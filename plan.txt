@@ -1,0 +1,127 @@
+NBA Data Project Quick Plan (nba_api)
+
+Goal
+Build 5 starter CSV files you can use for EDA, joins, and modeling.
+
+CSV Files To Create
+
+1) dim_teams.csv
+- Purpose: Team metadata dimension table.
+- Source: nba_api.stats.static.teams.get_teams()
+- Key columns: TEAM_ID (id), TEAM_NAME (full_name), ABBREVIATION, CITY, STATE, YEAR_FOUNDED.
+- Example columns: TEAM_ID, TEAM_NAME, ABBREVIATION, NICKNAME, CITY, STATE, YEAR_FOUNDED.
+
+2) dim_players.csv
+- Purpose: Player metadata dimension table.
+- Source: nba_api.stats.static.players.get_players()
+- Key columns: PLAYER_ID (id), FULL_NAME (full_name), FIRST_NAME, LAST_NAME, IS_ACTIVE.
+- Example columns: PLAYER_ID, FULL_NAME, FIRST_NAME, LAST_NAME, IS_ACTIVE.
+
+3) fact_team_games.csv
+- Purpose: Team-level game logs (one row per team per game).
+- Source: nba_api.stats.endpoints.leaguegamefinder.LeagueGameFinder
+- Core params: PlayerOrTeam='T', Season='YYYY-YY', SeasonType='Regular Season' (or 'Playoffs').
+- Join keys: GAME_ID, TEAM_ID.
+- Example columns: SEASON_ID, TEAM_ID, TEAM_ABBREVIATION, TEAM_NAME, GAME_ID, GAME_DATE, MATCHUP, WL, MIN, PTS, FG_PCT, FG3_PCT, FT_PCT, REB, AST, TOV, PLUS_MINUS.
+
+4) fact_player_games.csv
+- Purpose: One row per game (game-level table).
+- Source: Derived from fact_team_games.csv by deduplicating GAME_ID.
+- Typical columns: GAME_ID, GAME_DATE, matchup/home-away flags, winning team indicators.
+- Example columns: GAME_ID, GAME_DATE, SEASON, HOME_TEAM_ID, AWAY_TEAM_ID, HOME_TEAM_ABBREVIATION, AWAY_TEAM_ABBREVIATION, HOME_PTS, AWAY_PTS, WINNING_TEAM_ID.
+
+5) fact_player_boxscores.csv
+- Purpose: Player-level box score stats per game.
+- Source: nba_api.stats.endpoints.boxscoretraditionalv2.BoxScoreTraditionalV2(game_id=...)
+- Use the player stats dataset from each game response.
+- Join keys: GAME_ID, PLAYER_ID, TEAM_ID.
+- Example columns: GAME_ID, TEAM_ID, TEAM_ABBREVIATION, PLAYER_ID, PLAYER_NAME, START_POSITION, MIN, FGM, FGA, FG3M, FG3A, FTM, FTA, OREB, DREB, REB, AST, STL, BLK, TOV, PF, PTS, PLUS_MINUS.
+
+Recommended Build Order
+
+Step 1) Install packages
+- pip install nba_api pandas
+
+Step 2) Build dimensions first
+- Create dim_teams.csv from teams.get_teams().
+- Create dim_players.csv from players.get_players().
+
+Step 3) Build team game facts
+- Pull one season first (example: 2024-25) with LeagueGameFinder.
+- Save as fact_team_games.csv.
+
+Step 4) Build game-level table
+- Deduplicate fact_team_games.csv on GAME_ID.
+- Save one-row-per-game dataset as fact_player_games.csv.
+
+Step 5) Build player box score facts
+- Loop through unique GAME_ID values from fact_player_games.csv.
+- For each GAME_ID, call BoxScoreTraditionalV2(game_id=...).
+- Append player stats rows and save as fact_player_boxscores.csv.
+
+Practical Notes
+
+- Start with one season before scaling to multiple years.
+- Add a short delay between API calls when looping many GAME_IDs.
+- Keep Regular Season and Playoffs in separate pulls at first.
+- You can later add advanced endpoints (shot charts, tracking, lineup stats) once this baseline is stable.
+
+How These Tables Join
+
+- fact_team_games.TEAM_ID -> dim_teams.TEAM_ID
+- fact_player_boxscores.PLAYER_ID -> dim_players.PLAYER_ID
+- fact_team_games.GAME_ID -> fact_player_games.GAME_ID
+- fact_player_boxscores.GAME_ID -> fact_player_games.GAME_ID
+
+Useful Docs
+
+- nba_api docs: https://nba-api-sbang.readthedocs.io/en/latest/
+- Teams static: https://nba-api-sbang.readthedocs.io/en/latest/nba_api/stats/static/teams/
+- LeagueGameFinder: https://nba-api-sbang.readthedocs.io/en/latest/nba_api/stats/endpoints/leaguegamefinder/
+- BoxScoreTraditionalV2: https://nba-api-sbang.readthedocs.io/en/latest/nba_api/stats/endpoints/boxscoretraditionalv2/
+- Basics examples: https://nba-api-sbang.readthedocs.io/en/latest/examples/Basics/
+
+Additional Important Tables (Recommended Next)
+
+These are high-impact additions after your first 5 CSVs are stable.
+
+1) fact_team_advanced_game.csv
+- Why it matters: Adds pace/efficiency context (offensive and defensive quality) beyond basic box score stats.
+- Source: nba_api.stats.endpoints.boxscoreadvancedv2.BoxScoreAdvancedV2(game_id=...)
+- Grain: One row per team per game.
+- Join keys: GAME_ID, TEAM_ID.
+- Example columns: GAME_ID, TEAM_ID, TEAM_ABBREVIATION, TEAM_CITY, MIN, OFF_RATING, DEF_RATING, NET_RATING, AST_PCT, AST_TOV, AST_RATIO, OREB_PCT, DREB_PCT, REB_PCT, TM_TOV_PCT, EFG_PCT, TS_PCT, PACE, PIE.
+
+2) fact_player_advanced_game.csv
+- Why it matters: Better player evaluation metrics than raw PTS/REB/AST alone.
+- Source: nba_api.stats.endpoints.boxscoreadvancedv2.BoxScoreAdvancedV2(game_id=...)
+- Grain: One row per player per game.
+- Join keys: GAME_ID, PLAYER_ID, TEAM_ID.
+- Example columns: GAME_ID, TEAM_ID, PLAYER_ID, PLAYER_NAME, MIN, OFF_RATING, DEF_RATING, NET_RATING, USG_PCT, TS_PCT, AST_PCT, AST_TOV, AST_RATIO, OREB_PCT, DREB_PCT, REB_PCT, TM_TOV_PCT, EFG_PCT, PACE, PIE.
+
+3) fact_line_score.csv
+- Why it matters: Quarter-by-quarter scoring for momentum and comeback analysis.
+- Source: nba_api.stats.endpoints.boxscoresummaryv2.BoxScoreSummaryV2(game_id=...)
+- Grain: One row per team per game, with period scoring columns.
+- Join keys: GAME_ID, TEAM_ID.
+- Example columns: GAME_ID, TEAM_ID, TEAM_ABBREVIATION, TEAM_CITY_NAME, TEAM_NICKNAME, PTS_QTR1, PTS_QTR2, PTS_QTR3, PTS_QTR4, PTS_OT1, PTS_OT2, PTS, FG_PCT, FT_PCT, FG3_PCT, AST, REB, TOV.
+
+4) dim_schedule_games.csv
+- Why it matters: Lets you engineer rest/travel/b2b features for predictive work.
+- Source: built from your game tables (game date + team + opponent), optionally enriched with LeagueGameFinder.
+- Grain: One row per team per scheduled game.
+- Join keys: GAME_ID, TEAM_ID.
+- Example columns: GAME_ID, GAME_DATE, SEASON, TEAM_ID, OPP_TEAM_ID, IS_HOME, DAYS_REST, IS_BACK_TO_BACK, PREV_GAME_DATE, PREV_GAME_CITY, NEXT_GAME_DATE.
+
+5) fact_shot_chart.csv
+- Why it matters: Shot location, shot type, and zone-level tendencies.
+- Source: nba_api.stats.endpoints.shotchartdetail.ShotChartDetail
+- Grain: One row per shot attempt.
+- Join keys: GAME_ID, TEAM_ID, PLAYER_ID.
+- Example columns: GAME_ID, TEAM_ID, PLAYER_ID, PLAYER_NAME, PERIOD, MINUTES_REMAINING, SECONDS_REMAINING, EVENT_TYPE, ACTION_TYPE, SHOT_TYPE, SHOT_ZONE_BASIC, SHOT_ZONE_AREA, SHOT_ZONE_RANGE, LOC_X, LOC_Y, SHOT_DISTANCE, SHOT_ATTEMPTED_FLAG, SHOT_MADE_FLAG.
+
+Suggested Expansion Order
+
+- First add: fact_team_advanced_game.csv and fact_player_advanced_game.csv
+- Next add: fact_line_score.csv and dim_schedule_games.csv
+- Then add: fact_shot_chart.csv (largest table, best added after pipeline is stable)
