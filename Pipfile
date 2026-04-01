@@ -6,6 +6,8 @@ name = "pypi"
 [packages]
 nba-api = "*"
 pandas = "*"
+matplotlib = "*"
+numpy = "*"
 
 [dev-packages]
 ipykernel = "*"
